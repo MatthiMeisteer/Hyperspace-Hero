@@ -10,6 +10,12 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
+const { Pool } = require('pg');
+
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
 const { promisify } = require('util');
 
 const scrypt = promisify(crypto.scrypt);
@@ -103,10 +109,71 @@ function removeExpiredSessions() {
     db.sessions = db.sessions.filter(session => session.expiresAt > now);
 }
 
+
+ // ---------- Database: PostgreSQL / Neon ----------
+
+let db = { accounts: [], sessions: [] };
+let writeQueue = Promise.resolve();
+
+async function loadDatabase() {
+    if (!process.env.DATABASE_URL) {
+        throw new Error('DATABASE_URL is not configured.');
+    }
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS app_state (
+            id INTEGER PRIMARY KEY,
+            data JSONB NOT NULL
+        )
+    `);
+
+    await pool.query(`
+        INSERT INTO app_state (id, data)
+        VALUES (1, '{"accounts":[],"sessions":[]}'::jsonb)
+        ON CONFLICT (id) DO NOTHING
+    `);
+
+    const result = await pool.query(
+        'SELECT data FROM app_state WHERE id = 1'
+    );
+
+    db = result.rows[0].data;
+
+    if (!db || !Array.isArray(db.accounts) || !Array.isArray(db.sessions)) {
+        throw new Error('The PostgreSQL database has an invalid structure.');
+    }
+
+    const oldSessionCount = db.sessions.length;
+    removeExpiredSessions();
+
+    if (db.sessions.length !== oldSessionCount) {
+        await persistDatabase();
+    }
+}
+
+async function writeDatabaseFile() {
+    await pool.query(
+        'UPDATE app_state SET data = $1::jsonb WHERE id = 1',
+        [JSON.stringify(db)]
+    );
+}
+
+function persistDatabase() {
+    const write = writeQueue.then(writeDatabaseFile);
+    writeQueue = write.catch(() => {});
+    return write;
+}
+
+function removeExpiredSessions() {
+    const now = Date.now();
+    db.sessions = db.sessions.filter(session => session.expiresAt > now);
+}
+
 function findAccount(username) {
     const key = username.toLowerCase();
     return db.accounts.find(account => account.usernameKey === key);
 }
+
 
 // ---------- Validation ----------
 
@@ -524,7 +591,7 @@ loadDatabase().then(() => {
 
     server.listen(PORT, HOST, () => {
         console.log(`Space Arcade running at http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
-        console.log(`Accounts are stored in ${DB_FILE}`);
+        console.log('Accounts are stored in Neon PostgreSQL.');
     });
 }).catch(error => {
     console.error('Could not start the server: the account database failed to load.', error);
