@@ -87,6 +87,38 @@ let skillTreeMessage = '';
 let completedLevelPendingNext = null;
 let levelClearCooldown = 0;
 let gameOverFromDeath = false;
+let screenShake = { intensity: 0, timer: 0, duration: 0 };
+let hitstopTimer = 0;
+
+function addScreenShake(intensity = 5, duration = 0.2) {
+    // Keep the strongest recent shake so light hits don't override heavy ones.
+    if (screenShake.timer > 0 && intensity < screenShake.intensity) return;
+    screenShake.intensity = intensity;
+    screenShake.duration = duration;
+    screenShake.timer = duration;
+}
+
+function addHitstop(duration = 0.05) {
+    hitstopTimer = Math.max(hitstopTimer, duration);
+}
+
+function updateScreenEffects(dt) {
+    if (screenShake.timer > 0) {
+        screenShake.timer = Math.max(0, screenShake.timer - dt);
+        if (screenShake.timer === 0) screenShake.intensity = 0;
+    }
+    hitstopTimer = Math.max(0, hitstopTimer - dt);
+}
+
+function getScreenShakeOffset() {
+    if (screenShake.timer <= 0) return { x: 0, y: 0 };
+    const falloff = screenShake.timer / screenShake.duration;
+    const magnitude = screenShake.intensity * falloff;
+    return {
+        x: (Math.random() * 2 - 1) * magnitude,
+        y: (Math.random() * 2 - 1) * magnitude
+    };
+}
 
 const audio = {
     ctx: null,
@@ -1145,6 +1177,9 @@ function resetGame(startLevel = 1, preserveBuffs = false) {
     levelCleared = false;
     levelRewardCoins = 0;
     levelRewardSaveFailed = false;
+    screenShake.intensity = 0;
+    screenShake.timer = 0;
+    hitstopTimer = 0;
     updateScore();
 }
 
@@ -1461,6 +1496,8 @@ function damagePlayer(amount) {
     ship.absorptionHearts -= absorbedDamage;
     ship.lives -= amount - absorbedDamage;
     ship.invulnerable = 1.2;
+    addScreenShake(9, 0.35);
+    addHitstop(0.08);
 }
 
 function applyFreezeStatus(duration = 2) {
@@ -1552,6 +1589,7 @@ function spawnSmallEnemyShip() {
 }
 
 function triggerExplosion(x, y, radius = 42) {
+    addScreenShake(6, 0.18);
     for (let i = comets.length - 1; i >= 0; i--) {
         const comet = comets[i];
         const dx = comet.x - x;
@@ -2118,6 +2156,8 @@ function update(dt) {
                     awardEnemyDefeat(enemyShip);
                     addBurst(enemyShip.x, enemyShip.y, '#fb923c', 8, 100, 0.5, 2, 4);
                     audio.playHit();
+                    addScreenShake(enemyShip.isBoss ? 14 : 5, enemyShip.isBoss ? 0.45 : 0.15);
+                    addHitstop(enemyShip.isBoss ? 0.14 : 0.04);
                 }
                 if (!bullet.beam) {
                     bulletDestroyed = true;
@@ -2172,6 +2212,8 @@ function update(dt) {
                     ship.lives = Math.min(ship.maxLives, ship.lives + 1);
                     addBurst(blackHole.x, blackHole.y, '#7c3aed');
                     audio.playExplosion();
+                    addScreenShake(12, 0.4);
+                    addHitstop(0.1);
                     updateScore();
                 }
                 if (!bullet.beam) {
@@ -4669,9 +4711,13 @@ function drawGameOverScreen() {
 }
 
 function loop(timestamp) {
-    const dt = Math.min((timestamp - lastTime) / 1000 || 0.016, 0.03);
+    let dt = Math.min((timestamp - lastTime) / 1000 || 0.016, 0.03);
     lastTime = timestamp;
 
+    // Hitstop: while active, gameplay time crawls so impacts feel weighty,
+    // but the effects themselves still count down in real time.
+    if (hitstopTimer > 0) dt *= 0.08;
+    updateScreenEffects(dt);
     update(dt);
     drawBackground();
 
@@ -4685,6 +4731,10 @@ function loop(timestamp) {
         requestAnimationFrame(loop);
         return;
     }
+
+    const shakeOffset = getScreenShakeOffset();
+    ctx.save();
+    ctx.translate(shakeOffset.x, shakeOffset.y);
 
     drawBullets();
     for (const enemyBullet of enemyBullets) {
@@ -4899,6 +4949,8 @@ function loop(timestamp) {
     drawShip();
     drawParticles();
     drawShockwaves();
+    ctx.restore();
+
     drawHud();
     drawGameOverScreen();
 
