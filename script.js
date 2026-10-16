@@ -1608,8 +1608,8 @@ function damagePlayer(amount) {
     ship.absorptionHearts -= absorbedDamage;
     ship.lives -= amount - absorbedDamage;
     ship.invulnerable = 1.2;
-    addScreenShake(9, 0.35);
-    addHitstop(0.08);
+    addScreenShake(5, 0.25);
+    addHitstop(0.05);
 }
 
 function applyFreezeStatus(duration = 2) {
@@ -1701,7 +1701,7 @@ function spawnSmallEnemyShip() {
 }
 
 function triggerExplosion(x, y, radius = 42) {
-    addScreenShake(6, 0.18);
+    addScreenShake(4, 0.14);
     for (let i = comets.length - 1; i >= 0; i--) {
         const comet = comets[i];
         const dx = comet.x - x;
@@ -2268,8 +2268,8 @@ function update(dt) {
                     awardEnemyDefeat(enemyShip);
                     addBurst(enemyShip.x, enemyShip.y, '#fb923c', 8, 100, 0.5, 2, 4);
                     audio.playHit();
-                    addScreenShake(enemyShip.isBoss ? 14 : 5, enemyShip.isBoss ? 0.45 : 0.15);
-                    addHitstop(enemyShip.isBoss ? 0.14 : 0.04);
+                    addScreenShake(enemyShip.isBoss ? 9 : 3, enemyShip.isBoss ? 0.3 : 0.12);
+                    addHitstop(enemyShip.isBoss ? 0.09 : 0.03);
                 }
                 if (!bullet.beam) {
                     bulletDestroyed = true;
@@ -2324,8 +2324,8 @@ function update(dt) {
                     ship.lives = Math.min(ship.maxLives, ship.lives + 1);
                     addBurst(blackHole.x, blackHole.y, '#7c3aed');
                     audio.playExplosion();
-                    addScreenShake(12, 0.4);
-                    addHitstop(0.1);
+                    addScreenShake(8, 0.28);
+                    addHitstop(0.06);
                     updateScore();
                 }
                 if (!bullet.beam) {
