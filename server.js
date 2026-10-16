@@ -65,50 +65,6 @@ const SECURITY_HEADERS = {
 
 // ---------- Database ----------
 
-let db = { accounts: [], sessions: [] };
-let writeQueue = Promise.resolve();
-
-async function loadDatabase() {
-    await fsp.mkdir(DATA_DIR, { recursive: true });
-    try {
-        const parsed = JSON.parse(await fsp.readFile(DB_FILE, 'utf8'));
-        if (!parsed || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.sessions)) {
-            throw new Error(`${DB_FILE} has an invalid structure.`);
-        }
-        db = parsed;
-    } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-        await persistDatabase();
-    }
-    removeExpiredSessions();
-}
-
-async function writeDatabaseFile() {
-    const tempFile = `${DB_FILE}.${process.pid}.tmp`;
-    await fsp.writeFile(tempFile, JSON.stringify(db, null, 2), 'utf8');
-    // OneDrive or antivirus software can briefly lock the target file on Windows.
-    for (let attempt = 0; ; attempt++) {
-        try {
-            await fsp.rename(tempFile, DB_FILE);
-            return;
-        } catch (error) {
-            if (!['EPERM', 'EBUSY', 'EACCES'].includes(error.code) || attempt >= 5) throw error;
-            await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
-        }
-    }
-}
-
-function persistDatabase() {
-    const write = writeQueue.then(writeDatabaseFile);
-    writeQueue = write.catch(() => { });
-    return write;
-}
-
-function removeExpiredSessions() {
-    const now = Date.now();
-    db.sessions = db.sessions.filter(session => session.expiresAt > now);
-}
-
 
  // ---------- Database: PostgreSQL / Neon ----------
 
