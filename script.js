@@ -1353,14 +1353,17 @@ function updateScore() {
     if (scoreElement) scoreElement.textContent = `Level ${level} • Score: ${score}`;
 }
 
-function awardEnemyDefeat(enemyShip) {
-    const baseScore = enemyShip.scoreValue || (enemyShip.isBoss ? 250 : 20);
+function awardComboKill(baseScore) {
     comboCount = comboTimer > 0 ? comboCount + 1 : 1;
     comboTimer = 3 + skillTreeLevels.comboDrive * 0.6;
     const comboMultiplier = 1 + Math.min(comboCount - 1, 10) * 0.1;
     const points = Math.floor(baseScore * comboMultiplier);
     comboBonusScore += points - baseScore;
     score += points;
+}
+
+function awardEnemyDefeat(enemyShip) {
+    awardComboKill(enemyShip.scoreValue || (enemyShip.isBoss ? 250 : 20));
     recordQuestProgress('defeat-enemies');
     if (enemyShip.isBoss) recordQuestProgress('defeat-bosses');
     updateScore();
@@ -2348,8 +2351,10 @@ function update(dt) {
                 }
                 comets.splice(j, 1);
                 recordQuestProgress('destroy-comets');
-                score += 10;
+                awardComboKill(10);
                 addBurst(comet.x, comet.y, comet.color);
+                addScreenShake(1, 0.06);
+                addHitstop(0.01);
 
                 if (bullet.explosive) {
                     triggerExplosion(comet.x, comet.y, 34);
