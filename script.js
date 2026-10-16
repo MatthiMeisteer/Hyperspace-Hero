@@ -801,7 +801,7 @@ function drawCodeScreen() {
     ctx.fillText('REDEEM CODE', 355.5, 76);
     ctx.fillStyle = '#94a3b8';
     ctx.font = '7px "Press Start 2P", monospace';
-    ctx.fillText('TYPE A CODE, THEN PRESS ENTER', 355.5, 94);
+    ctx.fillText('TYPE A CODE OR PASTE (CTRL+V), THEN PRESS ENTER', 355.5, 94);
     drawMenuButton(getSkillTreeBackButton(), 'BACK');
 
     // Input box
@@ -5387,6 +5387,18 @@ function stopSkillTreeDrag(event) {
 
 canvas.addEventListener('pointerup', stopSkillTreeDrag);
 canvas.addEventListener('pointercancel', stopSkillTreeDrag);
+
+// Paste support for the redeem-code screen: the canvas can't receive paste
+// events itself, so we listen globally and only act while that menu is open.
+window.addEventListener('paste', (event) => {
+    if (hasStarted || menuScreen !== 'codes') return;
+    event.preventDefault();
+    const pastedText = (event.clipboardData?.getData('text') || '').trim();
+    if (!pastedText) return;
+    const cleaned = pastedText.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 60);
+    codeInputBuffer += cleaned;
+    codeMessage = '';
+});
 
 canvas.addEventListener('wheel', event => {
     if (menuScreen !== 'skills' || hasStarted) return;
