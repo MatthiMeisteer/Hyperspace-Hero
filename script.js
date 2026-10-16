@@ -717,6 +717,118 @@ function openSkinShopMenu() {
     skinShopMessage = '';
 }
 
+// ---------- Redeem codes ----------
+const redeemCodes = [
+    { code: 'WARPDRIVE', reward: 100, description: '+100 SPACE COINS' },
+    { code: 'STARFALL', reward: 50, description: '+50 SPACE COINS' },
+    { code: 'SUPERNOVA', reward: 250, description: '+250 SPACE COINS' },
+    { code: 'ROOKIE', reward: 25, description: '+25 SPACE COINS' },
+    { code: 'QX72KLM4N8PV6TZR2WJYH5FC9DB3SEAU7GN1XQLPMDZ0TRK4VC', reward: 1000000, description: '+1,000,000 SPACE COINS (TEST)' }
+];
+let codeInputBuffer = '';
+let codeMessage = '';
+let codeMessageIsError = false;
+
+function getRedeemedCodes() {
+    // Codes are redeemed once per pilot, remembered locally per account.
+    try {
+        return JSON.parse(localStorage.getItem(`spaceShooterRedeemed_${currentAccount?.username || 'guest'}`) || '[]');
+    } catch {
+        return [];
+    }
+}
+
+function saveRedeemedCodes(codes) {
+    try {
+        localStorage.setItem(`spaceShooterRedeemed_${currentAccount?.username || 'guest'}`, JSON.stringify(codes));
+    } catch {
+        // Storage unavailable: the code simply stays redeemable this session.
+    }
+}
+
+function openCodeMenu() {
+    menuScreen = 'codes';
+    hasStarted = false;
+    syncAccountControlsVisibility();
+    codeInputBuffer = '';
+    codeMessage = '';
+}
+
+function redeemCode(rawCode) {
+    const code = rawCode.trim().toUpperCase();
+    if (!code) return;
+    const definition = redeemCodes.find(entry => entry.code === code);
+    if (!definition) {
+        codeMessage = 'INVALID CODE - TRY AGAIN';
+        codeMessageIsError = true;
+        audio.playHit();
+        return;
+    }
+    const redeemed = getRedeemedCodes();
+    if (redeemed.includes(code)) {
+        codeMessage = 'CODE ALREADY REDEEMED';
+        codeMessageIsError = true;
+        audio.playHit();
+        return;
+    }
+    if (!currentAccount) {
+        codeMessage = 'SIGN IN TO REDEEM CODES';
+        codeMessageIsError = true;
+        return;
+    }
+
+    redeemed.push(code);
+    saveRedeemedCodes(redeemed);
+    spaceCoins += definition.reward;
+    codeMessage = `${code} REDEEMED: ${definition.description}`;
+    codeMessageIsError = false;
+    audio.playPickup();
+    saveAccountData().catch(error => {
+        console.error('Could not save redeemed code reward.', error);
+    });
+}
+
+function drawCodeScreen() {
+    const menuTransform = getMenuTransform();
+    ctx.save();
+    ctx.translate(menuTransform.x, menuTransform.y);
+    ctx.scale(menuTransform.scale, menuTransform.scale);
+    drawSpaceCoinBalance();
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '17px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('REDEEM CODE', 355.5, 76);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '7px "Press Start 2P", monospace';
+    ctx.fillText('TYPE A CODE, THEN PRESS ENTER', 355.5, 94);
+    drawMenuButton(getSkillTreeBackButton(), 'BACK');
+
+    // Input box
+    const box = { x: 155, y: 130, width: 400, height: 56 };
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+    ctx.fillRect(box.x, box.y, box.width, box.height);
+    ctx.strokeStyle = codeMessageIsError && codeMessage ? '#f87171' : '#38bdf8';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(box.x, box.y, box.width, box.height);
+    const shownText = codeInputBuffer + (Math.floor(Date.now() / 400) % 2 === 0 ? '_' : '');
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '10px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(shownText || 'ENTER CODE', box.x + box.width / 2, box.y + 34);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '6px "Press Start 2P", monospace';
+    ctx.fillText('HINT: THE CODES ARE HIDDEN IN THE GAME FILES...', 355.5, 215);
+    ctx.fillText('CODES ARE ONE-TIME PER PILOT', 355.5, 232);
+
+    ctx.fillStyle = codeMessageIsError ? '#fca5a5' : '#86efac';
+    ctx.font = '7px "Press Start 2P", monospace';
+    if (codeMessage) ctx.fillText(codeMessage, 355.5, 270);
+    ctx.textAlign = 'left';
+    ctx.restore();
+}
+
 function openQuestMenu() {
     menuScreen = 'quests';
     hasStarted = false;
@@ -3260,10 +3372,11 @@ function drawMenuButton(rect, label, hint = '') {
 
 function getHubButtonRects() {
     return [
-        { x: 180, y: 139, width: 351, height: 48 },
-        { x: 180, y: 195, width: 351, height: 48 },
-        { x: 180, y: 251, width: 351, height: 48 },
-        { x: 180, y: 307, width: 351, height: 48 }
+        { x: 180, y: 117, width: 351, height: 40 },
+        { x: 180, y: 163, width: 351, height: 40 },
+        { x: 180, y: 209, width: 351, height: 40 },
+        { x: 180, y: 255, width: 351, height: 40 },
+        { x: 180, y: 301, width: 351, height: 40 }
     ];
 }
 
@@ -3276,15 +3389,16 @@ function drawHomeScreen() {
     ctx.fillStyle = '#f8fafc';
     ctx.font = '22px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('SPACE ARCADE', 355.5, 105);
+    ctx.fillText('SPACE ARCADE', 355.5, 85);
     ctx.fillStyle = '#94a3b8';
     ctx.font = '9px "Press Start 2P", monospace';
-    ctx.fillText(`PILOT ${currentAccount?.username || ''}`, 355.5, 130);
-    const [levelsButton, skillsButton, codexButton, skinsButton] = getHubButtonRects();
+    ctx.fillText(`PILOT ${currentAccount?.username || ''}`, 355.5, 107);
+    const [levelsButton, skillsButton, codexButton, skinsButton, codesButton] = getHubButtonRects();
     drawMenuButton(levelsButton, 'LEVEL SELECT', 'PRESS 1');
     drawMenuButton(skillsButton, 'SKILL TREE', 'PRESS 2');
     drawMenuButton(codexButton, 'ENEMY CODEX', 'PRESS 3');
     drawMenuButton(skinsButton, 'SHIP SKINS', 'PRESS 4');
+    drawMenuButton(codesButton, 'REDEEM CODE', 'PRESS 5');
     ctx.textAlign = 'left';
     ctx.restore();
 }
@@ -4727,6 +4841,7 @@ function loop(timestamp) {
         else if (menuScreen === 'codex') drawEnemyCodexScreen();
         else if (menuScreen === 'skins') drawSkinShopScreen();
         else if (menuScreen === 'quests') drawQuestScreen();
+        else if (menuScreen === 'codes') drawCodeScreen();
         else drawLevelSelectionScreen();
         requestAnimationFrame(loop);
         return;
@@ -4973,11 +5088,23 @@ window.addEventListener('keydown', (event) => {
             else if (event.key === '2') openSkillTreeMenu();
             else if (event.key === '3') openEnemyCodexMenu();
             else if (event.key === '4') openSkinShopMenu();
+            else if (event.key === '5') openCodeMenu();
         } else if (menuScreen === 'skins') {
             if (event.key === 'Escape' || event.key === 'Backspace') openLevelMenu();
         } else if (menuScreen === 'quests') {
             if (event.key === 'Escape' || event.key === 'Backspace') openSkinShopMenu();
             else if (['1', '2', '3'].includes(event.key)) claimQuest(Number(event.key) - 1);
+        } else if (menuScreen === 'codes') {
+            if (event.key === 'Enter') {
+                redeemCode(codeInputBuffer);
+                codeInputBuffer = '';
+            } else if (event.key === 'Escape' || event.key === 'Backspace') {
+                if (event.key === 'Backspace' && codeInputBuffer.length > 0) codeInputBuffer = codeInputBuffer.slice(0, -1);
+                else openLevelMenu();
+            } else if (event.key.length === 1 && codeInputBuffer.length < 50
+                && /[a-zA-Z0-9]/.test(event.key)) {
+                codeInputBuffer += event.key.toUpperCase();
+            }
         } else if (menuScreen === 'skills') {
             if (event.key === 'Escape' || event.key === 'Backspace') openLevelMenu();
             else if (event.key === 'ArrowDown' || event.key === 's') {
@@ -5059,13 +5186,24 @@ canvas.addEventListener('pointerdown', (event) => {
         const y = (canvasY - menuTransform.y) / menuTransform.scale;
 
         if (menuScreen === 'home') {
-            const [levelsButton, skillsButton, codexButton, skinsButton] = getHubButtonRects();
+            const [levelsButton, skillsButton, codexButton, skinsButton, codesButton] = getHubButtonRects();
             const clicked = button => x >= button.x && x <= button.x + button.width
                 && y >= button.y && y <= button.y + button.height;
             if (clicked(levelsButton)) openLevelSelectionMenu();
             else if (clicked(skillsButton)) openSkillTreeMenu();
             else if (clicked(codexButton)) openEnemyCodexMenu();
             else if (clicked(skinsButton)) openSkinShopMenu();
+            else if (clicked(codesButton)) openCodeMenu();
+            return;
+        }
+
+        if (menuScreen === 'codes') {
+            const backButton = getSkillTreeBackButton();
+            if (x >= backButton.x && x <= backButton.x + backButton.width
+                && y >= backButton.y && y <= backButton.y + backButton.height) {
+                openLevelMenu();
+                return;
+            }
             return;
         }
 
