@@ -4063,70 +4063,6 @@ function drawEnemyCodexDetailScreen() {
     ctx.textAlign = 'left';
 }
 
-function drawLevelSelectionScreen() {
-    const menuTransform = getMenuTransform();
-    ctx.save();
-    ctx.translate(menuTransform.x, menuTransform.y);
-    ctx.scale(menuTransform.scale, menuTransform.scale);
-    drawSpaceCoinBalance();
-    const backButton = getSkillTreeBackButton();
-    drawMenuButton(backButton, 'BACK');
-
-    ctx.fillStyle = '#f8fafc';
-    ctx.font = '22px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('SELECT LEVEL', 355.5, 90);
-
-    ctx.font = '9px "Press Start 2P", monospace';
-    ctx.fillText('CLICK A PLANET OR USE ARROW KEYS', 355.5, 120);
-
-    const pageNodes = getVisibleLevelPageNodes();
-    ctx.beginPath();
-    ctx.strokeStyle = '#93c5fd';
-    ctx.lineWidth = 3;
-    ctx.moveTo(pageNodes[0].x, pageNodes[0].y);
-    for (const node of pageNodes.slice(1)) {
-        ctx.lineTo(node.x, node.y);
-    }
-    ctx.stroke();
-
-    for (const node of pageNodes) {
-        const locked = node.level > highestUnlockedLevel;
-        const selected = node.level === level && !locked;
-        ctx.save();
-        if (locked) ctx.globalAlpha = 0.35;
-        drawLevelPlanet(node, selected);
-        ctx.restore();
-
-        ctx.fillStyle = '#f8fafc';
-        ctx.font = '9px "Press Start 2P", monospace';
-        ctx.fillText(node.name, node.x, node.y + 43);
-        ctx.fillStyle = selected ? '#7dd3fc' : '#cbd5e1';
-        ctx.font = '7px "Press Start 2P", monospace';
-        ctx.fillText(node.risk, node.x, node.y + 55);
-        ctx.fillStyle = '#f8fafc';
-        ctx.font = '8px "Press Start 2P", monospace';
-        ctx.fillText(`LEVEL ${node.level}`, node.x, node.y + 66);
-        if (locked) {
-            ctx.fillStyle = '#fca5a5';
-            ctx.font = '7px "Press Start 2P", monospace';
-            ctx.fillText('LOCKED', node.x, node.y + 78);
-        }
-    }
-
-    const pageCount = Math.ceil(levelMapNodes.length / levelsPerPage);
-    const arrowButtons = getLevelPageArrowRects();
-    drawMenuButton(arrowButtons.previous, '<<');
-    drawMenuButton(arrowButtons.next, '>>');
-    ctx.fillStyle = '#cbd5e1';
-    ctx.font = '8px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(`PAGE ${levelSelectionPage + 1} / ${pageCount}`, 355.5, 344);
-
-    ctx.textAlign = 'left';
-    ctx.restore();
-}
-
 function getLevelPageArrowRects() {
     return {
         previous: { x: 242, y: 323, width: 64, height: 34 },
@@ -4140,9 +4076,158 @@ function getVisibleLevelPageNodes() {
         .slice(pageStart, pageStart + levelsPerPage)
         .map((node, index) => ({
             ...node,
-            x: 75 + index * 140,
-            y: index % 2 === 0 ? 165 : 225
+            x: getGalaxyPlanetPosition(index).x,
+            y: getGalaxyPlanetPosition(index).y
         }));
+}
+
+// Winding route across each galaxy page, so planets feel scattered in space
+// instead of lined up in a grid.
+const galaxyPlanetPositions = [
+    { x: 105, y: 250 },
+    { x: 225, y: 165 },
+    { x: 340, y: 255 },
+    { x: 465, y: 160 },
+    { x: 600, y: 235 }
+];
+
+function getGalaxyPlanetPosition(index) {
+    return galaxyPlanetPositions[index % galaxyPlanetPositions.length];
+}
+
+// Decorative spiral-galaxy backdrop: two rotating arms of dust plus a bright
+// core, drawn behind the planets to sell the "galaxy map" theme.
+function drawGalaxyBackdrop() {
+    const centerX = 355.5;
+    const centerY = 215;
+    const spin = Date.now() / 9000;
+
+    ctx.save();
+    ctx.translate(centerX, centerY);
+
+    const core = ctx.createRadialGradient(0, 0, 0, 0, 0, 120);
+    core.addColorStop(0, 'rgba(167, 139, 250, 0.28)');
+    core.addColorStop(0.5, 'rgba(124, 58, 237, 0.10)');
+    core.addColorStop(1, 'rgba(124, 58, 237, 0)');
+    ctx.fillStyle = core;
+    ctx.fillRect(-130, -130, 260, 260);
+
+    ctx.fillStyle = 'rgba(248, 250, 252, 0.9)';
+    ctx.beginPath();
+    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    for (const armAngle of [0, Math.PI]) {
+        for (let i = 2; i < 130; i += 2) {
+            const radius = 14 + i * 1.15;
+            if (radius > 320) break;
+            const angle = armAngle + spin + i * 0.115;
+            const x = Math.cos(angle) * radius * 1.25;
+            const y = Math.sin(angle) * radius * 0.42;
+            const alpha = Math.max(0, 0.45 - radius / 900);
+            ctx.beginPath();
+            ctx.fillStyle = `rgba(196, 181, 253, ${alpha})`;
+            ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    ctx.restore();
+}
+
+function drawLevelSelectionScreen() {
+    const menuTransform = getMenuTransform();
+    ctx.save();
+    ctx.translate(menuTransform.x, menuTransform.y);
+    ctx.scale(menuTransform.scale, menuTransform.scale);
+    drawSpaceCoinBalance();
+    const backButton = getSkillTreeBackButton();
+    drawMenuButton(backButton, 'BACK');
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '22px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('GALAXY MAP', 355.5, 85);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.fillText('CHOOSE YOUR DESTINATION', 355.5, 110);
+
+    drawGalaxyBackdrop();
+
+    const pageNodes = getVisibleLevelPageNodes();
+
+    // Warp route: a glowing dashed lane threading through every planet,
+    // brighter where it leads into the pilot's next unlocked destination.
+    ctx.save();
+    ctx.strokeStyle = 'rgba(147, 197, 253, 0.55)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([7, 9]);
+    ctx.lineDashOffset = -(Date.now() / 60) % 16;
+    ctx.shadowColor = '#38bdf8';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(pageNodes[0].x, pageNodes[0].y);
+    for (const node of pageNodes.slice(1)) {
+        const previous = pageNodes[pageNodes.indexOf(node) - 1];
+        const midX = (previous.x + node.x) / 2;
+        const midY = Math.min(previous.y, node.y) - 42;
+        ctx.quadraticCurveTo(midX, midY, node.x, node.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    for (const node of pageNodes) {
+        const locked = node.level > highestUnlockedLevel;
+        const selected = node.level === level && !locked;
+        ctx.save();
+        if (locked) ctx.globalAlpha = 0.35;
+        if (selected) {
+            // Slow pulsing target ring around the pilot's current destination.
+            const pulse = 30 + Math.sin(Date.now() / 300) * 5;
+            ctx.strokeStyle = 'rgba(125, 211, 252, 0.85)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, pulse, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        drawLevelPlanet(node, selected);
+        ctx.restore();
+
+        ctx.textAlign = 'center';
+        if (selected) {
+            const bob = Math.sin(Date.now() / 250) * 2;
+            ctx.fillStyle = '#7dd3fc';
+            ctx.font = '7px "Press Start 2P", monospace';
+            ctx.fillText('YOU ARE HERE', node.x, node.y - 44 + bob);
+        }
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '9px "Press Start 2P", monospace';
+        ctx.fillText(node.name, node.x, node.y + 47);
+        ctx.fillStyle = selected ? '#7dd3fc' : '#cbd5e1';
+        ctx.font = '6px "Press Start 2P", monospace';
+        ctx.fillText(node.risk, node.x, node.y + 60);
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '7px "Press Start 2P", monospace';
+        ctx.fillText(`LEVEL ${node.level}`, node.x, node.y + 72);
+        if (locked) {
+            ctx.fillStyle = '#fca5a5';
+            ctx.fillText('LOCKED', node.x, node.y + 84);
+        }
+        ctx.textAlign = 'left';
+    }
+
+    const pageCount = Math.ceil(levelMapNodes.length / levelsPerPage);
+    const arrowButtons = getLevelPageArrowRects();
+    drawMenuButton(arrowButtons.previous, '<<');
+    drawMenuButton(arrowButtons.next, '>>');
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`SECTOR ${levelSelectionPage + 1} / ${pageCount}`, 355.5, 380);
+
+    ctx.textAlign = 'left';
+    ctx.restore();
 }
 
 function getSkillTreeBackButton() {
