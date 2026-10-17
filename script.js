@@ -89,6 +89,69 @@ let levelClearCooldown = 0;
 let gameOverFromDeath = false;
 let screenShake = { intensity: 0, timer: 0, duration: 0 };
 let hitstopTimer = 0;
+let paused = false;
+
+function togglePause() {
+    // Only meaningful mid-battle; menu screens and game over handle ESC themselves.
+    if (!hasStarted || gameOver || levelCleared) return;
+    paused = !paused;
+    if (paused) {
+        // Clear held movement keys so the ship doesn't drift after unpausing.
+        for (const key of Object.keys(keys)) keys[key] = false;
+    }
+}
+
+function getPauseMenuLayout() {
+    const width = Math.min(460, canvas.width - 40);
+    const height = 320;
+    const x = (canvas.width - width) / 2;
+    const y = (canvas.height - height) / 2;
+    const buttonWidth = Math.min(300, width - 80);
+    const buttonHeight = 56;
+    const gap = 18;
+    return {
+        panel: { x, y, width, height },
+        buttons: [
+            { label: 'CONTINUE', x: x + (width - buttonWidth) / 2, y: y + 96, width: buttonWidth, height: buttonHeight, color: '#0284c7' },
+            { label: 'RESTART LEVEL', x: x + (width - buttonWidth) / 2, y: y + 96 + (buttonHeight + gap), width: buttonWidth, height: buttonHeight, color: '#334155' },
+            { label: 'MAIN MENU', x: x + (width - buttonWidth) / 2, y: y + 96 + (buttonHeight + gap) * 2, width: buttonWidth, height: buttonHeight, color: '#7f1d1d' }
+        ]
+    };
+}
+
+function drawPauseMenu() {
+    const layout = getPauseMenuLayout();
+
+    ctx.fillStyle = 'rgba(2, 8, 23, 0.72)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.97)';
+    ctx.fillRect(layout.panel.x, layout.panel.y, layout.panel.width, layout.panel.height);
+    ctx.strokeStyle = '#60a5fa';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(layout.panel.x, layout.panel.y, layout.panel.width, layout.panel.height);
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '20px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('PAUSED', canvas.width / 2, layout.panel.y + 58);
+
+    for (const button of layout.buttons) {
+        ctx.fillStyle = button.color;
+        ctx.fillRect(button.x, button.y, button.width, button.height);
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(button.x, button.y, button.width, button.height);
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '10px "Press Start 2P", monospace';
+        ctx.fillText(button.label, button.x + button.width / 2, button.y + button.height / 2 + 4);
+    }
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '7px "Press Start 2P", monospace';
+    ctx.fillText('ESC / C: CONTINUE     R: RESTART', canvas.width / 2, layout.panel.y + layout.panel.height - 16);
+    ctx.textAlign = 'left';
+}
 
 function addScreenShake(intensity = 5, duration = 0.2) {
     // Keep the strongest recent shake so light hits don't override heavy ones.
@@ -1298,6 +1361,7 @@ function resetGame(startLevel = 1, preserveBuffs = false) {
 }
 
 function openLevelMenu() {
+    paused = false;
     if (levelCleared) {
         completedLevelPendingNext = level;
         levelCleared = false;
@@ -1336,6 +1400,7 @@ function openLevelMenu() {
 function startLevelSelection(levelNumber) {
     if (levelNumber > highestUnlockedLevel || !levelMapNodes.some(node => node.level === levelNumber)) return;
 
+    paused = false;
     const preserveBuffs = completedLevelPendingNext === level && levelNumber === level + 1;
     completedLevelPendingNext = null;
     menuScreen = 'levels';
@@ -4070,28 +4135,28 @@ function drawEnemyCodexDetailScreen() {
 // World coordinates of every planet on one big map. Ships fly around it;
 // the camera follows, so the map never fits fully on screen.
 const galaxyWorldPositions = [
-    { x: 350, y: 420 },
-    { x: 620, y: 310 },
-    { x: 940, y: 420 },
-    { x: 1210, y: 290 },
-    { x: 1520, y: 400 },
-    { x: 1780, y: 270 },
-    { x: 2090, y: 380 },
-    { x: 2360, y: 260 },
-    { x: 2650, y: 360 },
-    { x: 2930, y: 250 },
-    { x: 550, y: 700 },
-    { x: 900, y: 800 },
-    { x: 1250, y: 690 },
-    { x: 1600, y: 800 },
-    { x: 1950, y: 690 },
-    { x: 2300, y: 800 },
-    { x: 2650, y: 690 },
-    { x: 3000, y: 780 },
-    { x: 850, y: 1080 },
-    { x: 2500, y: 1050 }
+    { x: 380, y: 260 },
+    { x: 810, y: 690 },
+    { x: 1240, y: 300 },
+    { x: 1740, y: 780 },
+    { x: 2270, y: 380 },
+    { x: 2830, y: 950 },
+    { x: 3350, y: 280 },
+    { x: 3860, y: 720 },
+    { x: 4380, y: 1160 },
+    { x: 4890, y: 340 },
+    { x: 5320, y: 830 },
+    { x: 5720, y: 230 },
+    { x: 6180, y: 760 },
+    { x: 6650, y: 320 },
+    { x: 7100, y: 900 },
+    { x: 7580, y: 260 },
+    { x: 8060, y: 640 },
+    { x: 8540, y: 1090 },
+    { x: 9020, y: 300 },
+    { x: 9480, y: 780 }
 ];
-const galaxyMapSize = { width: 3300, height: 1300 };
+const galaxyMapSize = { width: 9850, height: 1500 };
 
 // Menu-camera state. The ship is steered with the same keys as gameplay.
 const galaxyMap = {
@@ -4099,7 +4164,8 @@ const galaxyMap = {
     camY: galaxyWorldPositions[0].y,
     shipX: galaxyWorldPositions[0].x,
     shipY: galaxyWorldPositions[0].y,
-    cooldownRemaining: 0
+    cooldownRemaining: 0,
+    pendingNode: null // Planet awaiting launch confirmation.
 };
 const galaxyShipSpeed = 420; // px per second across the world
 
@@ -4133,6 +4199,11 @@ function getVisibleLevelPageNodes() {
 }
 
 function updateGalaxyMap(dt) {
+    galaxyMap.cooldownRemaining = Math.max(0, galaxyMap.cooldownRemaining - dt);
+
+    // While a launch confirmation is showing, freeze the ship.
+    if (galaxyMap.pendingNode) return;
+
     let dx = 0;
     let dy = 0;
     if (keys.ArrowLeft || keys.a) dx -= 1;
@@ -4146,19 +4217,89 @@ function updateGalaxyMap(dt) {
         galaxyMap.shipY = Math.max(0, Math.min(galaxyMapSize.height, galaxyMap.shipY + (dy / length) * galaxyShipSpeed * dt));
     }
 
-    galaxyMap.cooldownRemaining = Math.max(0, galaxyMap.cooldownRemaining - dt);
-
-    // Launch when the ship touches an unlocked planet's gravity well.
-    if (galaxyMap.cooldownRemaining > 0) return;
+    // Open the confirmation when the ship touches an unlocked planet.
     const nodes = getVisibleLevelPageNodes();
     for (const node of nodes) {
         if (node.level > highestUnlockedLevel) continue;
         if (Math.hypot(node.x - galaxyMap.shipX, node.y - galaxyMap.shipY) <= 30) {
-            galaxyMap.cooldownRemaining = 2.5; // Prevent instant relaunch loops.
-            startLevelSelection(node.level);
+            galaxyMap.pendingNode = node;
             return;
+        }
     }
+}
+
+function confirmGalaxyLaunch() {
+    const node = galaxyMap.pendingNode;
+    if (!node) return;
+    galaxyMap.pendingNode = null;
+    galaxyMap.cooldownRemaining = 2.5; // Prevent instant relaunch loops.
+    startLevelSelection(node.level);
+}
+
+function cancelGalaxyLaunch() {
+    const node = galaxyMap.pendingNode;
+    galaxyMap.pendingNode = null;
+    if (!node) return;
+    // Nudge the ship out of the planet's trigger radius so the prompt
+    // doesn't instantly reopen while it's still overlapping.
+    const dx = galaxyMap.shipX - node.x;
+    const dy = galaxyMap.shipY - node.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    galaxyMap.shipX = node.x + (dx / dist) * 40;
+    galaxyMap.shipY = node.y + (dy / dist) * 40;
+    galaxyMap.cooldownRemaining = 0.4;
+}
+
+function getGalaxyConfirmLayout() {
+    const width = Math.min(560, canvas.width - 40);
+    const height = 170;
+    return {
+        x: (canvas.width - width) / 2,
+        y: (canvas.height - height) / 2 - 40,
+        width,
+        height,
+        yes: { x: (canvas.width - width) / 2 + 40, y: (canvas.height - height) / 2 - 40 + 100, width: 200, height: 44 },
+        no: { x: (canvas.width + width) / 2 - 240, y: (canvas.height - height) / 2 - 40 + 100, width: 200, height: 44 }
+    };
+}
+
+function drawGalaxyConfirmDialog() {
+    const node = galaxyMap.pendingNode;
+    if (!node) return;
+    const layout = getGalaxyConfirmLayout();
+
+    ctx.fillStyle = 'rgba(2, 8, 23, 0.75)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+    ctx.fillRect(layout.x, layout.y, layout.width, layout.height);
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(layout.x, layout.y, layout.width, layout.height);
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.textAlign = 'center';
+    ctx.font = '10px "Press Start 2P", monospace';
+    ctx.fillText('ARE YOU SURE YOU WANT TO CONTINUE', canvas.width / 2, layout.y + 32);
+    ctx.fillText('YOUR JOURNEY TO THIS PLANET?', canvas.width / 2, layout.y + 52);
+
+    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.fillStyle = '#7dd3fc';
+    const planetName = node.name || `LEVEL ${node.level}`;
+    ctx.fillText(planetName.toUpperCase(), canvas.width / 2, layout.y + 78);
+
+    for (const [button, label, color] of [[layout.yes, 'YES', '#22c55e'], [layout.no, 'NO', '#ef4444']]) {
+        ctx.fillStyle = 'rgba(30, 41, 59, 0.95)';
+        ctx.fillRect(button.x, button.y, button.width, button.height);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(button.x, button.y, button.width, button.height);
+        ctx.fillStyle = color;
+        ctx.font = '10px "Press Start 2P", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, button.x + button.width / 2, button.y + button.height / 2 + 4);
     }
+    ctx.textAlign = 'left';
 }
 
 function drawGalaxyBackdrop(worldCamX, worldCamY) {
@@ -4285,6 +4426,9 @@ function drawLevelSelectionScreen() {
     ctx.font = '8px "Press Start 2P", monospace';
     ctx.fillText('FLY YOUR SHIP WITH ARROWS / WASD', canvas.width / 2, 56);
     ctx.fillText('TOUCH A PLANET TO LAUNCH', canvas.width / 2, 72);
+
+    // Launch confirmation prompt takes priority over everything else.
+    if (galaxyMap.pendingNode) drawGalaxyConfirmDialog();
 
     // Minimap so the player always knows where they are on the big map.
     const minimap = { x: canvas.width - 148, y: 88, width: 120, height: 48 };
@@ -5018,7 +5162,7 @@ function loop(timestamp) {
     // but the effects themselves still count down in real time.
     if (hitstopTimer > 0) dt *= 0.08;
     updateScreenEffects(dt);
-    update(dt);
+    if (!paused) update(dt);
     drawBackground();
 
     if (!hasStarted) {
@@ -5254,6 +5398,7 @@ function loop(timestamp) {
 
     drawHud();
     drawGameOverScreen();
+    if (paused && hasStarted && !gameOver && !levelCleared) drawPauseMenu();
 
     requestAnimationFrame(loop);
 }
@@ -5265,6 +5410,21 @@ window.addEventListener('keydown', (event) => {
 
     if (levelCleared) {
         if (levelClearCooldown <= 0) openLevelMenu();
+        return;
+    }
+
+    if (paused) {
+        if (event.key === 'Escape') {
+            togglePause();
+        } else if (key === 'c' || event.key === 'Enter') {
+            togglePause();
+        } else if (key === 'r') {
+            paused = false;
+            startLevelSelection(level);
+        } else if (key === 'm') {
+            paused = false;
+            openLevelMenu();
+        }
         return;
     }
 
@@ -5307,6 +5467,14 @@ window.addEventListener('keydown', (event) => {
                 clampSkillTreePan();
             }
         } else if (menuScreen === 'levels') {
+            if (galaxyMap.pendingNode) {
+                if (event.key === 'y' || event.key === 'Y' || event.key === 'Enter') {
+                    confirmGalaxyLaunch();
+                } else if (event.key === 'n' || event.key === 'N' || event.key === 'Escape') {
+                    cancelGalaxyLaunch();
+                }
+                return;
+            }
             // Ship flying handles movement; only menu exit keys apply here.
             if (event.key === 'Escape' || event.key === 'Backspace') {
                 openLevelMenu();
@@ -5338,6 +5506,11 @@ window.addEventListener('keydown', (event) => {
         return;
     }
 
+    if (hasStarted && !levelCleared && event.key === 'Escape') {
+        togglePause();
+        return;
+    }
+
     if (event.key === ' ' || event.code === 'Space') {
         event.preventDefault();
         if (ship.chargedBeam) {
@@ -5359,6 +5532,25 @@ window.addEventListener('keydown', (event) => {
 });
 
 canvas.addEventListener('pointerdown', (event) => {
+    if (paused && hasStarted && !gameOver && !levelCleared) {
+        const rect = canvas.getBoundingClientRect();
+        const x = (event.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+        const layout = getPauseMenuLayout();
+        const clickedButton = button => x >= button.x && x <= button.x + button.width
+            && y >= button.y && y <= button.y + button.height;
+        if (clickedButton(layout.buttons[0])) {
+            togglePause();
+        } else if (clickedButton(layout.buttons[1])) {
+            paused = false;
+            startLevelSelection(level);
+        } else if (clickedButton(layout.buttons[2])) {
+            paused = false;
+            openLevelMenu();
+        }
+        return;
+    }
+
     if (!hasStarted) {
         const rect = canvas.getBoundingClientRect();
         const canvasX = (event.clientX - rect.left) * (canvas.width / rect.width);
@@ -5504,6 +5696,19 @@ canvas.addEventListener('pointerdown', (event) => {
             if (x >= backButton.x && x <= backButton.x + backButton.width
                 && y >= backButton.y && y <= backButton.y + backButton.height) {
                 openLevelMenu();
+                return;
+            }
+
+            // Launch confirmation prompt: intercept clicks first.
+            if (galaxyMap.pendingNode) {
+                const confirmLayout = getGalaxyConfirmLayout();
+                const clickedButton = button => x >= button.x && x <= button.x + button.width
+                    && y >= button.y && y <= button.y + button.height;
+                if (clickedButton(confirmLayout.yes)) {
+                    confirmGalaxyLaunch();
+                } else if (clickedButton(confirmLayout.no)) {
+                    cancelGalaxyLaunch();
+                }
                 return;
             }
 
