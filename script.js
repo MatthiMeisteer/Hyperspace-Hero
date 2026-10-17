@@ -224,7 +224,6 @@ const levelMapNodes = [
     { level: 20, name: 'CALLISTO', risk: 'RISK: CATACLYSM', type: 'callisto', enemyType: 'callisto-sentinel' }
 ];
 const levelsPerPage = 5;
-let levelSelectionPage = 0;
 const planetBossProfiles = [
     { planet: 'EARTH', name: 'Gaia Colossus', color: '#4ade80', description: 'Balanced aimed shots', appearance: 'flora', volley: [0], cooldown: 1.25 },
     { planet: 'MARS', name: 'Redstorm Marauder', color: '#fb7c55', description: 'Twin flanking shots', appearance: 'flame', volley: [-0.2, 0.2], cooldown: 1.2 },
@@ -687,10 +686,13 @@ function openLevelSelectionMenu() {
     menuScreen = 'levels';
     hasStarted = false;
     syncAccountControlsVisibility();
-    levelSelectionPage = Math.min(
-        Math.floor((highestUnlockedLevel - 1) / levelsPerPage),
-        Math.ceil(levelMapNodes.length / levelsPerPage) - 1
-    );
+    // Spawn the map ship next to the highest unlocked planet.
+    const spawnPlanet = getGalaxyPlanetWorldPosition(highestUnlockedLevel - 1);
+    galaxyMap.shipX = spawnPlanet.x;
+    galaxyMap.shipY = spawnPlanet.y + 70;
+    galaxyMap.camX = spawnPlanet.x;
+    galaxyMap.camY = spawnPlanet.y;
+    galaxyMap.cooldownRemaining = 0.4;
 }
 
 function openSkillTreeMenu() {
@@ -4063,171 +4065,265 @@ function drawEnemyCodexDetailScreen() {
     ctx.textAlign = 'left';
 }
 
-function getLevelPageArrowRects() {
+// ---------- Galaxy map (explorable large world map) ----------
+
+// World coordinates of every planet on one big map. Ships fly around it;
+// the camera follows, so the map never fits fully on screen.
+const galaxyWorldPositions = [
+    { x: 350, y: 420 },
+    { x: 620, y: 310 },
+    { x: 940, y: 420 },
+    { x: 1210, y: 290 },
+    { x: 1520, y: 400 },
+    { x: 1780, y: 270 },
+    { x: 2090, y: 380 },
+    { x: 2360, y: 260 },
+    { x: 2650, y: 360 },
+    { x: 2930, y: 250 },
+    { x: 550, y: 700 },
+    { x: 900, y: 800 },
+    { x: 1250, y: 690 },
+    { x: 1600, y: 800 },
+    { x: 1950, y: 690 },
+    { x: 2300, y: 800 },
+    { x: 2650, y: 690 },
+    { x: 3000, y: 780 },
+    { x: 850, y: 1080 },
+    { x: 2500, y: 1050 }
+];
+const galaxyMapSize = { width: 3300, height: 1300 };
+
+// Menu-camera state. The ship is steered with the same keys as gameplay.
+const galaxyMap = {
+    camX: galaxyWorldPositions[0].x,
+    camY: galaxyWorldPositions[0].y,
+    shipX: galaxyWorldPositions[0].x,
+    shipY: galaxyWorldPositions[0].y,
+    cooldownRemaining: 0
+};
+const galaxyShipSpeed = 420; // px per second across the world
+
+function getGalaxyPlanetWorldPosition(index) {
+    return galaxyWorldPositions[index] || { x: 0, y: 0 };
+}
+
+function getGalaxyCameraOffset() {
+    // Follow the ship, but clamp so we never pan past the map edges.
+    const halfW = canvas.width / 2;
+    const halfH = canvas.height / 2;
     return {
-        previous: { x: 242, y: 323, width: 64, height: 34 },
-        next: { x: 405, y: 323, width: 64, height: 34 }
+        x: Math.max(halfW, Math.min(galaxyMapSize.width - halfW, galaxyMap.shipX)),
+        y: Math.max(halfH, Math.min(galaxyMapSize.height - halfH, galaxyMap.shipY))
     };
 }
 
+function getLevelPageArrowRects() {
+    // The arrow keys now fly the ship; paging is gone, so no arrow buttons.
+    return { previous: null, next: null };
+}
+
 function getVisibleLevelPageNodes() {
-    const pageStart = levelSelectionPage * levelsPerPage;
-    return levelMapNodes
-        .slice(pageStart, pageStart + levelsPerPage)
-        .map((node, index) => ({
-            ...node,
-            x: getGalaxyPlanetPosition(index).x,
-            y: getGalaxyPlanetPosition(index).y
-        }));
+    // Every planet lives on the big map now; return all of them in world
+    // coordinates so click/hover checks keep working uniformly.
+    return levelMapNodes.map((node, index) => ({
+        ...node,
+        x: getGalaxyPlanetWorldPosition(index).x,
+        y: getGalaxyPlanetWorldPosition(index).y
+    }));
 }
 
-// Winding route across each galaxy page, so planets feel scattered in space
-// instead of lined up in a grid.
-const galaxyPlanetPositions = [
-    { x: 105, y: 250 },
-    { x: 225, y: 165 },
-    { x: 340, y: 255 },
-    { x: 465, y: 160 },
-    { x: 600, y: 235 }
-];
+function updateGalaxyMap(dt) {
+    let dx = 0;
+    let dy = 0;
+    if (keys.ArrowLeft || keys.a) dx -= 1;
+    if (keys.ArrowRight || keys.d) dx += 1;
+    if (keys.ArrowUp || keys.w) dy -= 1;
+    if (keys.ArrowDown || keys.s) dy += 1;
 
-function getGalaxyPlanetPosition(index) {
-    return galaxyPlanetPositions[index % galaxyPlanetPositions.length];
-}
-
-// Decorative spiral-galaxy backdrop: two rotating arms of dust plus a bright
-// core, drawn behind the planets to sell the "galaxy map" theme.
-function drawGalaxyBackdrop() {
-    const centerX = 355.5;
-    const centerY = 215;
-    const spin = Date.now() / 9000;
-
-    ctx.save();
-    ctx.translate(centerX, centerY);
-
-    const core = ctx.createRadialGradient(0, 0, 0, 0, 0, 120);
-    core.addColorStop(0, 'rgba(167, 139, 250, 0.28)');
-    core.addColorStop(0.5, 'rgba(124, 58, 237, 0.10)');
-    core.addColorStop(1, 'rgba(124, 58, 237, 0)');
-    ctx.fillStyle = core;
-    ctx.fillRect(-130, -130, 260, 260);
-
-    ctx.fillStyle = 'rgba(248, 250, 252, 0.9)';
-    ctx.beginPath();
-    ctx.arc(0, 0, 3, 0, Math.PI * 2);
-    ctx.fill();
-
-    for (const armAngle of [0, Math.PI]) {
-        for (let i = 2; i < 130; i += 2) {
-            const radius = 14 + i * 1.15;
-            if (radius > 320) break;
-            const angle = armAngle + spin + i * 0.115;
-            const x = Math.cos(angle) * radius * 1.25;
-            const y = Math.sin(angle) * radius * 0.42;
-            const alpha = Math.max(0, 0.45 - radius / 900);
-            ctx.beginPath();
-            ctx.fillStyle = `rgba(196, 181, 253, ${alpha})`;
-            ctx.arc(x, y, 1.2, 0, Math.PI * 2);
-            ctx.fill();
-        }
+    const length = Math.hypot(dx, dy);
+    if (length > 0) {
+        galaxyMap.shipX = Math.max(0, Math.min(galaxyMapSize.width, galaxyMap.shipX + (dx / length) * galaxyShipSpeed * dt));
+        galaxyMap.shipY = Math.max(0, Math.min(galaxyMapSize.height, galaxyMap.shipY + (dy / length) * galaxyShipSpeed * dt));
     }
 
+    galaxyMap.cooldownRemaining = Math.max(0, galaxyMap.cooldownRemaining - dt);
+
+    // Launch when the ship touches an unlocked planet's gravity well.
+    if (galaxyMap.cooldownRemaining > 0) return;
+    const nodes = getVisibleLevelPageNodes();
+    for (const node of nodes) {
+        if (node.level > highestUnlockedLevel) continue;
+        if (Math.hypot(node.x - galaxyMap.shipX, node.y - galaxyMap.shipY) <= 30) {
+            galaxyMap.cooldownRemaining = 2.5; // Prevent instant relaunch loops.
+            startLevelSelection(node.level);
+            return;
+    }
+    }
+}
+
+function drawGalaxyBackdrop(worldCamX, worldCamY) {
+    // Starfield parallax: drawn relative to camera so flying feels real.
+    const parallax = 0.25;
+    const time = Date.now() / 1000;
+    ctx.save();
+    for (let i = 0; i < 90; i++) {
+        // Deterministic pseudo-random star positions from the index.
+        const sx = ((i * 617) % 2048) / 2048;
+        const sy = ((i * 941) % 2048) / 2048;
+        const radius = ((i * 331) % 100) / 100;
+        const starSize = 0.6 + radius * 1.6;
+        const worldStarX = sx * galaxyMapSize.width;
+        const worldStarY = sy * galaxyMapSize.height;
+        const screenX = worldStarX - worldCamX * parallax;
+        const screenY = worldStarY - worldCamY * parallax;
+        // Wrap the starfield so it always fills the screen while flying.
+        const wrappedX = ((screenX % canvas.width) + canvas.width) % canvas.width;
+        const wrappedY = ((screenY % canvas.height) + canvas.height) % canvas.height;
+        const twinkle = 0.35 + 0.3 * Math.sin(time * 2 + i);
+        ctx.globalAlpha = twinkle;
+        ctx.fillStyle = radius > 0.85 ? '#c4b5fd' : '#e2e8f0';
+        ctx.beginPath();
+        ctx.arc(wrappedX, wrappedY, starSize, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
     ctx.restore();
+
+    // Faint nebula patches anchored to world space for depth.
+    const nebulas = [
+        { x: 800, y: 550, radius: 420, color: '124, 58, 237' },
+        { x: 2100, y: 500, radius: 480, color: '37, 99, 235' },
+        { x: 1600, y: 1000, radius: 380, color: '124, 58, 237' }
+    ];
+    for (const nebula of nebulas) {
+        const screenX = nebula.x - worldCamX;
+        const screenY = nebula.y - worldCamY;
+        const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, nebula.radius);
+        gradient.addColorStop(0, `rgba(${nebula.color}, 0.10)`);
+        gradient.addColorStop(1, `rgba(${nebula.color}, 0)`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(screenX - nebula.radius, screenY - nebula.radius, nebula.radius * 2, nebula.radius * 2);
+    }
 }
 
 function drawLevelSelectionScreen() {
-    const menuTransform = getMenuTransform();
+    updateGalaxyMap(0.016); // Menu runs at its own cadence; fixed step is fine.
+    const cam = getGalaxyCameraOffset();
+
+    // Draw the world translated by the camera, no scaling - a real "fly" map.
     ctx.save();
-    ctx.translate(menuTransform.x, menuTransform.y);
-    ctx.scale(menuTransform.scale, menuTransform.scale);
-    drawSpaceCoinBalance();
-    const backButton = getSkillTreeBackButton();
-    drawMenuButton(backButton, 'BACK');
+    ctx.translate(-cam.x + canvas.width / 2, -cam.y + canvas.height / 2);
 
-    ctx.fillStyle = '#f8fafc';
-    ctx.font = '22px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('GALAXY MAP', 355.5, 85);
+    drawGalaxyBackdrop(cam.x, cam.y);
 
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '8px "Press Start 2P", monospace';
-    ctx.fillText('CHOOSE YOUR DESTINATION', 355.5, 110);
-
-    drawGalaxyBackdrop();
-
-    const pageNodes = getVisibleLevelPageNodes();
-
-    // Warp route: a glowing dashed lane threading through every planet,
-    // brighter where it leads into the pilot's next unlocked destination.
-    ctx.save();
-    ctx.strokeStyle = 'rgba(147, 197, 253, 0.55)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([7, 9]);
-    ctx.lineDashOffset = -(Date.now() / 60) % 16;
-    ctx.shadowColor = '#38bdf8';
-    ctx.shadowBlur = 6;
-    ctx.beginPath();
-    ctx.moveTo(pageNodes[0].x, pageNodes[0].y);
-    for (const node of pageNodes.slice(1)) {
-        const previous = pageNodes[pageNodes.indexOf(node) - 1];
-        const midX = (previous.x + node.x) / 2;
-        const midY = Math.min(previous.y, node.y) - 42;
-        ctx.quadraticCurveTo(midX, midY, node.x, node.y);
-    }
-    ctx.stroke();
-    ctx.restore();
-
-    for (const node of pageNodes) {
+    // Planet labels & markers in world space.
+    for (const [index, node] of getVisibleLevelPageNodes().entries()) {
         const locked = node.level > highestUnlockedLevel;
-        const selected = node.level === level && !locked;
+        const nextUnlocked = node.level === highestUnlockedLevel && locked === false;
+        const isCurrent = node.level === level;
+
         ctx.save();
-        if (locked) ctx.globalAlpha = 0.35;
-        if (selected) {
-            // Slow pulsing target ring around the pilot's current destination.
-            const pulse = 30 + Math.sin(Date.now() / 300) * 5;
-            ctx.strokeStyle = 'rgba(125, 211, 252, 0.85)';
+        if (locked) ctx.globalAlpha = 0.3;
+        if (nextUnlocked) {
+            const pulse = 38 + Math.sin(Date.now() / 280) * 7;
+            ctx.strokeStyle = 'rgba(125, 211, 252, 0.8)';
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.arc(node.x, node.y, pulse, 0, Math.PI * 2);
             ctx.stroke();
         }
-        drawLevelPlanet(node, selected);
+        drawLevelPlanet({ ...node, x: node.x, y: node.y }, !locked);
         ctx.restore();
 
         ctx.textAlign = 'center';
-        if (selected) {
-            const bob = Math.sin(Date.now() / 250) * 2;
-            ctx.fillStyle = '#7dd3fc';
-            ctx.font = '7px "Press Start 2P", monospace';
-            ctx.fillText('YOU ARE HERE', node.x, node.y - 44 + bob);
-        }
         ctx.fillStyle = '#f8fafc';
-        ctx.font = '9px "Press Start 2P", monospace';
-        ctx.fillText(node.name, node.x, node.y + 47);
-        ctx.fillStyle = selected ? '#7dd3fc' : '#cbd5e1';
-        ctx.font = '6px "Press Start 2P", monospace';
-        ctx.fillText(node.risk, node.x, node.y + 60);
-        ctx.fillStyle = '#f8fafc';
-        ctx.font = '7px "Press Start 2P", monospace';
-        ctx.fillText(`LEVEL ${node.level}`, node.x, node.y + 72);
-        if (locked) {
-            ctx.fillStyle = '#fca5a5';
-            ctx.fillText('LOCKED', node.x, node.y + 84);
-        }
+        ctx.font = '11px "Press Start 2P", monospace';
+        ctx.fillText(node.name, node.x, node.y + 52);
+        ctx.fillStyle = locked ? '#fca5a5' : '#cbd5e1';
+        ctx.font = '8px "Press Start 2P", monospace';
+        ctx.fillText(`LEVEL ${node.level}${locked ? ' - LOCKED' : ''}`, node.x, node.y + 68);
         ctx.textAlign = 'left';
     }
 
-    const pageCount = Math.ceil(levelMapNodes.length / levelsPerPage);
-    const arrowButtons = getLevelPageArrowRects();
-    drawMenuButton(arrowButtons.previous, '<<');
-    drawMenuButton(arrowButtons.next, '>>');
-    ctx.fillStyle = '#cbd5e1';
-    ctx.font = '8px "Press Start 2P", monospace';
+    // Player ship on the map (reuse the real gameplay hull for continuity).
+    ctx.save();
+    ctx.translate(galaxyMap.shipX, galaxyMap.shipY);
+    ctx.scale(1.1, 1.1);
+    traceShipHull(getActiveSkin().shape);
+    const hullGradient = ctx.createLinearGradient(-16, -8, 16, 14);
+    const skin = getActiveSkin();
+    hullGradient.addColorStop(0, skin.colors[0]);
+    hullGradient.addColorStop(0.5, skin.colors[2]);
+    hullGradient.addColorStop(1, skin.colors[3]);
+    ctx.fillStyle = hullGradient;
+    ctx.fill();
+    ctx.strokeStyle = skin.outline;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Engine glow so it reads clearly as "you" at map scale.
+    ctx.fillStyle = skin.exhaust[0];
+    ctx.beginPath();
+    ctx.moveTo(-6, 18);
+    ctx.lineTo(0, 32);
+    ctx.lineTo(6, 18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.restore(); // End world space.
+
+    // Screen-space HUD on top of the world.
+    drawSpaceCoinBalance();
+    drawMenuButton(getSkillTreeBackButton(), 'BACK');
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '13px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(`SECTOR ${levelSelectionPage + 1} / ${pageCount}`, 355.5, 380);
+    ctx.fillText('GALAXY MAP', canvas.width / 2, 34);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.fillText('FLY YOUR SHIP WITH ARROWS / WASD', canvas.width / 2, 56);
+    ctx.fillText('TOUCH A PLANET TO LAUNCH', canvas.width / 2, 72);
+
+    // Minimap so the player always knows where they are on the big map.
+    const minimap = { x: canvas.width - 148, y: 88, width: 120, height: 48 };
+    const scaleX = minimap.width / galaxyMapSize.width;
+    const scaleY = minimap.height / galaxyMapSize.height;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.fillRect(minimap.x, minimap.y, minimap.width, minimap.height);
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(minimap.x, minimap.y, minimap.width, minimap.height);
+    for (const [index, node] of getVisibleLevelPageNodes().entries()) {
+        const locked = node.level > highestUnlockedLevel;
+        ctx.fillStyle = locked ? '#475569' : '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(
+            minimap.x + node.x * scaleX,
+            minimap.y + node.y * scaleY,
+            locked ? 1 : 1.5,
+            0,
+            Math.PI * 2
+        );
+        ctx.fill();
+    }
+    ctx.fillStyle = '#facc15';
+    ctx.beginPath();
+    ctx.arc(
+        minimap.x + galaxyMap.shipX * scaleX,
+        minimap.y + galaxyMap.shipY * scaleY,
+        2,
+        0,
+        Math.PI * 2
+    );
+    ctx.fill();
 
     ctx.textAlign = 'left';
-    ctx.restore();
+}
+
+function getGalaxyNearbyPlanet() {
+    return null;
 }
 
 function getSkillTreeBackButton() {
@@ -5211,12 +5307,8 @@ window.addEventListener('keydown', (event) => {
                 clampSkillTreePan();
             }
         } else if (menuScreen === 'levels') {
-            const pageCount = Math.ceil(levelMapNodes.length / levelsPerPage);
-            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-                levelSelectionPage = Math.min(pageCount - 1, levelSelectionPage + 1);
-            } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-                levelSelectionPage = Math.max(0, levelSelectionPage - 1);
-            } else if (event.key === 'Escape' || event.key === 'Backspace') {
+            // Ship flying handles movement; only menu exit keys apply here.
+            if (event.key === 'Escape' || event.key === 'Backspace') {
                 openLevelMenu();
             }
         } else if (menuScreen === 'codex') {
@@ -5414,24 +5506,30 @@ canvas.addEventListener('pointerdown', (event) => {
                 openLevelMenu();
                 return;
             }
-            const arrowButtons = getLevelPageArrowRects();
-            const clicked = button => x >= button.x && x <= button.x + button.width
-                && y >= button.y && y <= button.y + button.height;
-            const pageCount = Math.ceil(levelMapNodes.length / levelsPerPage);
-            if (clicked(arrowButtons.previous)) {
-                levelSelectionPage = Math.max(0, levelSelectionPage - 1);
-                return;
-            }
-            if (clicked(arrowButtons.next)) {
-                levelSelectionPage = Math.min(pageCount - 1, levelSelectionPage + 1);
-                return;
-            }
 
+            // Clicking a planet flies the ship there automatically; launching
+            // still requires the ship to actually touch the planet.
+            const clickWorldX = x + galaxyMap.camX - canvas.width / 2;
+            const clickWorldY = y + galaxyMap.camY - canvas.height / 2;
+            let nearestPlanet = null;
+            let nearestDistance = Infinity;
             for (const node of getVisibleLevelPageNodes()) {
-                const distance = Math.hypot(x - node.x, y - node.y);
-                if (distance <= 34) {
-                    startLevelSelection(node.level);
-                    return;
+                if (node.level > highestUnlockedLevel) continue;
+                const distance = Math.hypot(clickWorldX - node.x, clickWorldY - node.y);
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearestPlanet = node;
+                }
+            }
+            if (nearestPlanet && nearestDistance <= 40) {
+                const direction = Math.hypot(
+                    nearestPlanet.x - galaxyMap.shipX,
+                    nearestPlanet.y - galaxyMap.shipY
+                ) || 1;
+                if (direction > 40) {
+                    // Nudge the ship most of the way so it drifts in and touches.
+                    galaxyMap.shipX += (nearestPlanet.x - galaxyMap.shipX) * 0.85;
+                    galaxyMap.shipY += (nearestPlanet.y - galaxyMap.shipY) * 0.85;
                 }
             }
         }
