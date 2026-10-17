@@ -352,6 +352,37 @@ const enemyTypeStats = {
     'ganymede-guardian': { radius: 20, scale: 0.72, moveSpeed: 28, bulletSpeed: 230, shotCooldown: 2.3, health: 12, score: 105 },
     'callisto-sentinel': { radius: 20, scale: 0.72, moveSpeed: 40, bulletSpeed: 270, shotCooldown: 1.8, health: 13, score: 120 }
 };
+// ---------- Elite enemies & planet modifiers ----------
+
+// Named modifiers an ELITE enemy can carry. Elites are tougher, worth more,
+// and draw a colored ring so you can spot (and prioritize) them.
+const eliteModifiers = {
+    fastBullets: { id: 'fastBullets', name: 'SWIFT', description: 'Fires faster bullets', bulletSpeedMultiplier: 1.35, color: '#38bdf8' },
+    splitting: { id: 'splitting', name: 'DIVISIVE', description: 'Splits into two scouts on death', color: '#a78bfa' },
+    shielded: { id: 'shielded', name: 'SHIELDED', description: 'Blocks the first hit it takes', color: '#22c55e' }
+};
+const eliteKeys = Object.keys(eliteModifiers);
+
+// A random hazard/bonus applied to each planet launch. The galaxy map's
+// confirmation dialog previews it before you commit to the journey.
+const levelModifierDefinitions = [
+    { id: 'asteroidStorm', name: 'ASTEROID STORM', description: 'MORE + FASTER COMETS', cometMultiplier: 2, speedMultiplier: 1.25, coinMultiplier: 1.2 },
+    { id: 'eliteLegion', name: 'ELITE LEGION', description: 'ELITES ARE 2.5X MORE COMMON', eliteChanceMultiplier: 2.5, coinMultiplier: 1.3 },
+    { id: 'doubleSalvage', name: 'RICH SALVAGE', description: '1.5X COINS ON COMPLETION', coinMultiplier: 1.5 },
+    { id: 'none', name: 'CLEAR SKIES', description: 'NO SPECIAL HAZARDS', coinMultiplier: 1 }
+];
+
+let activeLevelModifier = null;   // Applied while the current level runs.
+let queuedLevelModifier = null;   // Previewed on the galaxy map, used on launch.
+
+function rollLevelModifier() {
+    const roll = Math.random();
+    if (roll < 0.25) return levelModifierDefinitions[0];
+    if (roll < 0.5) return levelModifierDefinitions[1];
+    if (roll < 0.65) return levelModifierDefinitions[2];
+    return levelModifierDefinitions[3]; // CLEAR SKIES
+}
+
 const codexEntriesPerPage = 6;
 let codexPage = 0;
 let codexSelectedEntryId = null;
@@ -1394,6 +1425,7 @@ function openLevelMenu() {
     ship.powerShotTimer = 0;
     ship.nextShotFast = false;
     ship.blueStarTimer = 0;
+    activeLevelModifier = null;
     updateScore();
 }
 
@@ -1401,6 +1433,10 @@ function startLevelSelection(levelNumber) {
     if (levelNumber > highestUnlockedLevel || !levelMapNodes.some(node => node.level === levelNumber)) return;
 
     paused = false;
+    // Queue the modifier previewed on the galaxy map, then roll the next
+    // planet's modifier so the map preview stays one launch ahead.
+    activeLevelModifier = queuedLevelModifier;
+    queuedLevelModifier = rollLevelModifier();
     const preserveBuffs = completedLevelPendingNext === level && levelNumber === level + 1;
     completedLevelPendingNext = null;
     menuScreen = 'levels';
@@ -1442,7 +1478,8 @@ function getDifficultyLevel() {
 
 function spawnComet() {
     const difficultyLevel = getDifficultyLevel();
-    const extraComets = Math.min(3, 1 + difficultyLevel);
+    const extraComets = Math.min(3, 1 + difficultyLevel)
+        * (activeLevelModifier?.cometMultiplier || 1);
 
     for (let i = 0; i < extraComets; i++) {
         const radius = randomBetween(16, 30);
@@ -1465,7 +1502,7 @@ function spawnComet() {
             y = randomBetween(0, canvas.height);
         }
 
-        const speedBoost = 1 + difficultyLevel * 0.22;
+        const speedBoost = (1 + difficultyLevel * 0.22) * (activeLevelModifier?.speedMultiplier || 1);
 
         comets.push({
             x,
@@ -1745,20 +1782,30 @@ function spawnSmallEnemyShip() {
         : availableTypes[Math.floor(Math.random() * availableTypes.length)].type;
     const stats = enemyTypeStats[selectedType];
 
+    // Elite chance: base 8%, boosted by the level modifier if active.
+    const eliteChance = 0.08 * (activeLevelModifier?.eliteChanceMultiplier || 1);
+    const isElite = level >= 3 && Math.random() < eliteChance;
+    const eliteMod = isElite ? eliteModifiers[eliteKeys[Math.floor(Math.random() * eliteKeys.length)]] : null;
+
     enemyShips.push({
         x: side < 0 ? -stats.radius : canvas.width + stats.radius,
         y: randomBetween(50, 120),
         radius: stats.radius,
         isBoss: false,
+        isElite,
+        eliteMod,
+        hasEliteShield: eliteMod?.id === 'shielded',
         type: selectedType,
-        scoreValue: stats.score,
-        scale: stats.scale,
-        moveSpeed: stats.moveSpeed,
-        bulletSpeed: stats.bulletSpeed,
-        shotCooldown: stats.shotCooldown,
+        scoreValue: isElite ? stats.score * 3 : stats.score,
+        scale: isElite ? stats.scale * 1.15 : stats.scale,
+        moveSpeed: isElite ? stats.moveSpeed * 1.1 : stats.moveSpeed,
+        bulletSpeed: isElite
+            ? stats.bulletSpeed * (eliteMod?.bulletSpeedMultiplier || 1)
+            : stats.bulletSpeed,
+        shotCooldown: isElite ? stats.shotCooldown * 0.85 : stats.shotCooldown,
         damage: getEnemyAttackDamage(),
-        health: getEnemyHealth(stats.health),
-        maxHealth: getEnemyHealth(stats.health),
+        health: isElite ? getEnemyHealth(stats.health) * 2 : getEnemyHealth(stats.health),
+        maxHealth: isElite ? getEnemyHealth(stats.health) * 2 : getEnemyHealth(stats.health),
         cooldown: randomBetween(0.8, stats.shotCooldown),
         pulse: Math.random() * Math.PI * 2,
         rotation: 0,
@@ -1768,6 +1815,40 @@ function spawnSmallEnemyShip() {
         dashTimer: 0,
         homeY: randomBetween(50, 120)
     });
+}
+
+// Elites split into two fresh scouts when destroyed by bullets (DIVISIVE).
+function maybeSplitElite(enemyShip) {
+    if (!enemyShip.isElite || enemyShip.eliteMod?.id !== 'splitting') return;
+    const stats = enemyTypeStats.scout;
+    for (const spread of [-30, 30]) {
+        enemyShips.push({
+            x: enemyShip.x + spread,
+            y: enemyShip.y,
+            radius: stats.radius,
+            isBoss: false,
+            isElite: false,
+            eliteMod: null,
+            hasEliteShield: false,
+            type: 'scout',
+            scoreValue: stats.score,
+            scale: stats.scale,
+            moveSpeed: stats.moveSpeed,
+            bulletSpeed: stats.bulletSpeed,
+            shotCooldown: stats.shotCooldown,
+            damage: getEnemyAttackDamage(),
+            health: getEnemyHealth(stats.health),
+            maxHealth: getEnemyHealth(stats.health),
+            cooldown: 1.2,
+            pulse: Math.random() * Math.PI * 2,
+            rotation: 0,
+            direction: spread < 0 ? -1 : 1,
+            flankSide: spread < 0 ? -1 : 1,
+            phaseTimer: randomBetween(0, 1.5),
+            dashTimer: 0,
+            homeY: randomBetween(50, 120)
+        });
+    }
 }
 
 function triggerExplosion(x, y, radius = 42) {
@@ -2279,7 +2360,9 @@ function update(dt) {
         levelClearCooldown = 1;
         highestUnlockedLevel = Math.max(highestUnlockedLevel, Math.min(levelMapNodes.length, level + 1));
         levelRewardCoins = Math.floor(
-            (75 + level * 25) * (1 + skillTreeLevels.coinScavenger * 0.15)
+            (75 + level * 25)
+            * (1 + skillTreeLevels.coinScavenger * 0.15)
+            * (activeLevelModifier?.coinMultiplier || 1)
         );
         spaceCoins += levelRewardCoins;
         recordQuestProgress('clear-levels');
@@ -2334,12 +2417,23 @@ function update(dt) {
                 }
 
                 if (enemyShip.health <= 0) {
-                    enemyShips.splice(j, 1);
-                    awardEnemyDefeat(enemyShip);
-                    addBurst(enemyShip.x, enemyShip.y, '#fb923c', 8, 100, 0.5, 2, 4);
-                    audio.playHit();
-                    addScreenShake(enemyShip.isBoss ? 9 : 3, enemyShip.isBoss ? 0.3 : 0.12);
-                    addHitstop(enemyShip.isBoss ? 0.09 : 0.03);
+                    // SHIELDED elites absorb one lethal hit and break their
+                    // shield instead of dying, then become vulnerable.
+                    if (enemyShip.hasEliteShield && !bullet.beam) {
+                        enemyShip.hasEliteShield = false;
+                        enemyShip.health = Math.max(1, enemyShip.maxHealth * 0.3);
+                        addBurst(enemyShip.x, enemyShip.y, '#22c55e', 14, 160, 0.6, 2, 5);
+                        audio.playHit();
+                    } else {
+                        maybeSplitElite(enemyShip);
+                        enemyShips.splice(j, 1);
+                        awardEnemyDefeat(enemyShip);
+                        addBurst(enemyShip.x, enemyShip.y, '#fb923c', 8, 100, 0.5, 2, 4);
+                        audio.playHit();
+                        addScreenShake(enemyShip.isBoss ? 9 : (enemyShip.isElite ? 5 : 3),
+                            enemyShip.isBoss ? 0.3 : (enemyShip.isElite ? 0.18 : 0.12));
+                        addHitstop(enemyShip.isBoss ? 0.09 : (enemyShip.isElite ? 0.05 : 0.03));
+                    }
                 }
                 if (!bullet.beam) {
                     bulletDestroyed = true;
@@ -4164,6 +4258,7 @@ const galaxyMap = {
     camY: galaxyWorldPositions[0].y,
     shipX: galaxyWorldPositions[0].x,
     shipY: galaxyWorldPositions[0].y,
+    facingAngle: Math.PI, // Start pointing down toward the play area.
     cooldownRemaining: 0,
     pendingNode: null // Planet awaiting launch confirmation.
 };
@@ -4215,6 +4310,9 @@ function updateGalaxyMap(dt) {
     if (length > 0) {
         galaxyMap.shipX = Math.max(0, Math.min(galaxyMapSize.width, galaxyMap.shipX + (dx / length) * galaxyShipSpeed * dt));
         galaxyMap.shipY = Math.max(0, Math.min(galaxyMapSize.height, galaxyMap.shipY + (dy / length) * galaxyShipSpeed * dt));
+        // Face the flight direction. atan2 works directly because the hull is
+        // drawn pointing UP (-y); add PI/2 to convert to canvas rotation.
+        galaxyMap.facingAngle = Math.atan2(dy, dx) + Math.PI / 2;
     }
 
     // Open the confirmation when the ship touches an unlocked planet.
@@ -4248,6 +4346,12 @@ function cancelGalaxyLaunch() {
     galaxyMap.shipX = node.x + (dx / dist) * 40;
     galaxyMap.shipY = node.y + (dy / dist) * 40;
     galaxyMap.cooldownRemaining = 0.4;
+}
+
+function getGalaxyBackButton() {
+    // Anchored to the real top-right corner of the canvas, in screen pixels,
+    // because the galaxy map is drawn unscaled (unlike the other menus).
+    return { x: canvas.width - 166, y: 16, width: 150, height: 34 };
 }
 
 function getGalaxyConfirmLayout() {
@@ -4287,6 +4391,12 @@ function drawGalaxyConfirmDialog() {
     ctx.fillStyle = '#7dd3fc';
     const planetName = node.name || `LEVEL ${node.level}`;
     ctx.fillText(planetName.toUpperCase(), canvas.width / 2, layout.y + 78);
+
+    // Preview the planet's modifier so the player knows what to expect.
+    const modifier = queuedLevelModifier || rollLevelModifier();
+    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.fillStyle = modifier.id === 'none' ? '#86efac' : '#fbbf24';
+    ctx.fillText(`MODIFIER: ${modifier.name} - ${modifier.description}`, canvas.width / 2, layout.y + 100);
 
     for (const [button, label, color] of [[layout.yes, 'YES', '#22c55e'], [layout.no, 'NO', '#ef4444']]) {
         ctx.fillStyle = 'rgba(30, 41, 59, 0.95)';
@@ -4389,6 +4499,7 @@ function drawLevelSelectionScreen() {
     // Player ship on the map (reuse the real gameplay hull for continuity).
     ctx.save();
     ctx.translate(galaxyMap.shipX, galaxyMap.shipY);
+    ctx.rotate(galaxyMap.facingAngle);
     ctx.scale(1.1, 1.1);
     traceShipHull(getActiveSkin().shape);
     const hullGradient = ctx.createLinearGradient(-16, -8, 16, 14);
@@ -4413,9 +4524,9 @@ function drawLevelSelectionScreen() {
 
     ctx.restore(); // End world space.
 
-    // Screen-space HUD on top of the world.
+    // Screen-space HUD on top of the world (raw screen pixels, no menu scale).
     drawSpaceCoinBalance();
-    drawMenuButton(getSkillTreeBackButton(), 'BACK');
+    drawMenuButton(getGalaxyBackButton(), 'BACK');
 
     ctx.fillStyle = '#f8fafc';
     ctx.font = '13px "Press Start 2P", monospace';
@@ -4426,6 +4537,16 @@ function drawLevelSelectionScreen() {
     ctx.font = '8px "Press Start 2P", monospace';
     ctx.fillText('FLY YOUR SHIP WITH ARROWS / WASD', canvas.width / 2, 56);
     ctx.fillText('TOUCH A PLANET TO LAUNCH', canvas.width / 2, 72);
+
+    // Preview the modifier of the next planet the player will launch into.
+    if (queuedLevelModifier) {
+        ctx.fillStyle = queuedLevelModifier.id === 'none' ? '#86efac' : '#fbbf24';
+        ctx.fillText(
+            `NEXT MODIFIER: ${queuedLevelModifier.name}`,
+            canvas.width / 2,
+            92
+        );
+    }
 
     // Launch confirmation prompt takes priority over everything else.
     if (galaxyMap.pendingNode) drawGalaxyConfirmDialog();
@@ -5073,6 +5194,11 @@ function drawHud() {
         ctx.font = '8px "Press Start 2P", monospace';
         ctx.fillText(`COMBO X${comboCount}  +${comboBonusScore}`, hudWidth - 18, ship.phantomDashUnlocked ? 94 : 78);
     }
+    if (activeLevelModifier && activeLevelModifier.id !== 'none') {
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = '7px "Press Start 2P", monospace';
+        ctx.fillText(`MODIFIER: ${activeLevelModifier.name}`, hudWidth - 18, ship.phantomDashUnlocked ? 110 : 94);
+    }
     ctx.restore();
 
     if (levelCleared) {
@@ -5223,6 +5349,19 @@ function loop(timestamp) {
             'ganymede-guardian': '#94a3b8',
             'callisto-sentinel': '#a78bfa'
         }[enemyShip.type] || (enemyShip.isBoss ? enemyShip.bossProfile.color : '#e2e8f0');
+        if (enemyShip.isElite) {
+            const eliteGlow = 0.55 + Math.sin(Date.now() / 200) * 0.2;
+            ctx.strokeStyle = enemyShip.eliteMod?.color || '#fbbf24';
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = enemyShip.eliteMod?.color || '#fbbf24';
+            ctx.shadowBlur = 10;
+            ctx.globalAlpha *= eliteGlow;
+            ctx.beginPath();
+            ctx.arc(0, 0, 24, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha /= eliteGlow;
+        }
         if (enemyShip.isBoss) {
             const previousAlpha = ctx.globalAlpha;
             ctx.strokeStyle = enemyColor;
@@ -5832,5 +5971,6 @@ window.addEventListener('resize', () => {
 });
 
 createStars();
+queuedLevelModifier = rollLevelModifier();
 resetGame();
 requestAnimationFrame(loop);
